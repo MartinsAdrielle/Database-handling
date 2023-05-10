@@ -1,0 +1,149 @@
+## File INPD2020_todos_final
+## Path in Brain: /genetica_1/Genotipagem_INPD_Broad2019/PGC_NIMH_Salum_PTSD_GSA-MD_v1_3/RP-1194/processamento_inpd2019/analise_final_idsarrumados/arquivosfinais # nolint
+
+## 5367 people (2211 males, 3156 females), children and parents
+## Children: 2191
+## Variants 474756
+## Processado em Start time: Mon Sep 28 15:10:12 2020
+
+## Pheno PGC (last update)
+## File: Pheno_Children_Jun_PGC (with all disorders)
+## Script: Fenotipagem_Geno_INPD_Lucas_V2.Rmd
+## Children: 2246 (file with 2247 1 invalid ID) 
+## Path: ("~/Fenotipo_MDD_INPD") My personal PC
+
+## R version: 4.1.0
+# January 2023
+
+# Free memory and old variables from environment
+gc()
+rm(list = ls(all.names = TRUE))
+
+# Librarys
+library (plyr) #join_all
+
+
+# Getting the files (ID with C,M,F in INPD_todos_final.fam)
+setwd("~/Fenotipo_MDD_INPD")
+Pheno_Children_Jun20_PGC <- read.csv("~/Fenotipo_MDD_INPD/Pheno_Children_Jun20_PGC.txt", sep="")
+INPD2020_todos_final <- read.table("~/Fenotipo_MDD_INPD/INPD2020_todos_final.fam", quote="\"", comment.char="")
+
+# Paste C ID in Pheno_Childrean_Jun_PGC
+Pheno_Children_Jun20_PGC$subjectid <- paste0("C", Pheno_Children_Jun20_PGC$subjectid)
+
+# Change colname
+names(INPD2020_todos_final)[names(INPD2020_todos_final) == "V2"] <- "subjectid"
+
+# Left by right for only take IDS from Pheno_Children 
+IDS_inpd_children <- join_all(list(INPD2020_todos_final, Pheno_Children_Jun20_PGC), by = "subjectid", type = "right")
+colnames(IDS_inpd_children)
+
+#Select FID and IID only 
+Ids_inpd <- subset(IDS_inpd_children, select = c(2, 1 ))
+names(Ids_inpd)[names(Ids_inpd) == "subjectid"] <- "IID"
+names(Ids_inpd)[names(Ids_inpd) == "V1"] <- "FID"
+
+# Save file 
+write.table(Ids_inpd, "./update_INPD_IDS.txt", sep="\t", col.names = T, row.names = F, quote = F)
+
+#####################################################################################################################
+# Copy for subsystem files: /home/adrielle/PRS_inter/Genotipagem_inpd/INPD_Update_certo
+# PLINK v1.90b6.24 64-bit (6 Jun 2021) 
+
+## keep only with pgc phenotype evaluation 
+
+ plink --bfile INPD2020_todos_final --keep ./update_INPD_IDS.txt  --make-bed --out INPD_2020_final_childrean #2178
+
+
+##########################################################################################################
+## CBCL data in rds
+## Note: CBCL W2 some answers with ABCL, dont know with is reliable
+## file: Cbcl_pfactor send in 08/06/2022
+## file: subjectid send in 15/06/2022, mirror for ident in redcap to subjectid
+
+setwd("~/Analise_Trauma_PRS/Testes_N")
+
+Cbcl_pfactor <- readRDS("C:/Users/Adrielle/Documents/Bancos_INPD_brutos/Cbcl_pfactor.rds")
+subjectid <- readRDS("C:/Users/Adrielle/Downloads/subjectid.rds")
+INPD_2020_final <- read.table("~/Analise_Trauma_PRS/Testes_N/INPD2020_todos_final.fam", quote="\"", comment.char="") #2178
+
+## By Waves in cbcl file 
+
+w0 <- Cbcl_pfactor[Cbcl_pfactor$redcap_event_name=="wave0_arm_1",] #2511
+w1 <- Cbcl_pfactor[Cbcl_pfactor$redcap_event_name=="wave1_arm_1",] #2010
+w2 <- Cbcl_pfactor[Cbcl_pfactor$redcap_event_name=="wave2_arm_1",] #843
+
+## make the merge with W0
+
+CBCL_WO_subjectid <- join_all(list(w0, subjectid), by = "ident", type = "inner") #2511
+colnames(CBCL_WO_subjectid)
+
+# take out ident and redcap_event
+CBCL_WO_subjectid <- subset(CBCL_WO_subjectid, select = c(6, 3,4,5))
+
+CBCL_WO_subjectid$subjectid <- paste0("C", CBCL_WO_subjectid$subjectid)
+
+# merge with Pheno_Children
+CBCL_WO_subjectid_only_merge <- join_all(list(CBCL_WO_subjectid, Pheno_Children_Jun20_PGC), by = "subjectid", type = "inner") #2239
+
+# merge with INPD_2020_childrean 
+names(INPD_2020_final_childrean)[names(INPD_2020_final_childrean) == "V2"] <- "subjectid" #2178
+
+# merge with genotype file
+CBCL_WO_subjectid_with_final_id <- join_all(list(CBCL_WO_subjectid, INPD2020_todos_final), by = "subjectid", type = "inner") #2191
+
+# see with has NAs 
+teste_cbcl <- na.omit(CBCL_WO_subjectid_with_final_id) #0
+
+# select and save pheno from CBCL W0
+CBCL_WO_subjectid_pheno <- subset(CBCL_WO_subjectid_with_final_id, select = c(5, 1,3))
+names(CBCL_WO_subjectid_pheno)[names(CBCL_WO_subjectid_pheno) == "subjectid"] <- "IID"
+names(CBCL_WO_subjectid_pheno)[names(CBCL_WO_subjectid_pheno) == "V1"] <- "FID"
+
+write.table(CBCL_WO_subjectid_pheno, "./update_CBCL_W0_pheno", sep="\t", col.names = T, row.names = F, quote = F)
+
+###################################################################################################################################
+# Comand line time 
+
+# Filtrer for CBCL only 
+plink --bfile INPD2020_todos_final --keep ./update_CBCL_W0_pheno.txt  --make-bed --out INPD_2020_final_CBCL #2191
+
+# update the phenotype for CBCL inter W0 
+plink2 --bfile INPD_2020_final_CBCL --pheno update_CBCL_W0_pheno.txt --make-bed --out INPD_2020_CBCL_pheno #2191
+
+# remove duplicated samples and with parents with high IBD >25% 
+plink --bfile INPD2020_todos_final --keep ./update_CBCL_W0_pheno  --make-bed --out INPD_2020_final_CBCL #2189
+
+# Run PRS with internalizing symptons 
+# Base: 10.1016/j.jaac.2021.11.035
+# Download from: GWAS catalog 
+
+# Run PCA
+plink --bile ../INPD_2020_CBCL_removidos --pca 10 #10 first components
+
+# Run PRSice2 
+# Download: https://choishingwan.github.io/PRSice/
+# v2.3.3 
+# Base: internalizing GWAS
+# Path:/home/adrielle/PRS_inter/Genotipagem_inpd/INPD_Update_certo/PRS_CBCL_update
+    sudo Rscript PRSice.R --dir . --prsice PRSice_linux --base ./GCST90054778_buildGRCh37.tsv/int_overall_sumstats.tsv --snp variant_id --chr chromosome 
+    --bp base_pair_location --A1 EA --A2 OA  --pvalue p_value  --target INPD_Update_certo/INPD_2020_CBCL_removidos --thread 2 --stat EAF --or --binary-target F 
+    --out ./INPD_Update_certo/PRS_CBCL_update/PRS_CBCL_W0_std --score std --cov ./INPD_Update_certo/PRS_CBCL_update/plink.eigenvec 
+    --bar-levels 0.001,0.01,0.05,0.1,0.2,0.3,0.4,0.5,0.8 --all-score T --pheno ./INPD_Update_certo/update_CBCL_W0_pheno.txt 
+# Base: MDD phase 2
+# Download: https://pgc.unc.edu/for-researchers/download-results/ # 29700475 pudmed idlink
+# Path: /media/genetica/New_Space/Adrielle_TEPT/PRS_MDD_update_2189 in Acervo PC
+    sudo Rscript PRSice.R --dir . --prsice PRSice_linux --base ./Depressao/MDD2018_ex23andMe --snp SNP --chr CHR --bp BP --A1 A1 --A2 A2  --pvalue P  
+    --target ./Depressao/INPD_2020_CBCL_pheno  --thread 4 --stat OR --or --binary-target F --out ./PRS_MDD_update_2189/PRS_MDD_std_2189 --score std 
+    --cov ./Depressao/plink.eigenvec  --bar-levels 0.001,0.01,0.05,0.1,0.2,0.3,0.4,0.5,0.8 --all-score T --pheno ./Depressao/update_CBCL_W0_pheno.txt 
+# maybe try with ANX and MDD meta?
+
+#########################################################################################################################################
+### Back in R ###
+# Script: 
+setwd("~/Analise_Trauma_PRS/PRS_CBCL_update_std")
+   PRS_CBCL_update_std <- read.table("./PRS_CBCL_W0_std.best", quote="\"", comment.char="") 
+    PCA_INPD <- read.table("./plink.eigenvec", quote="\"", comment.char="") 
+    Banco_INPD_demografico <- Ota_149BHRC_2023_01_15 <- readRDS("C:/Users/Adrielle/Documents/Fenotipo_MDD_INPD/Ota_149BHRC_2023_01_15.rds") 
+
+
