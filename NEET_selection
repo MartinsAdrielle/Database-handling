@@ -1,0 +1,70 @@
+#############################
+#####  Banco da Celina ######
+#############################
+# 15/04/2023
+# Adrielle 
+
+library (plyr) #join_all
+library(dplyr) # select 
+
+# Separando as variaveis 
+
+w1 <- Oshiro_148BHRC_2023_01_05[Oshiro_148BHRC_2023_01_05$redcap_event_name=="wave1_arm_1",]
+w2 <- Oshiro_148BHRC_2023_01_05[Oshiro_148BHRC_2023_01_05$redcap_event_name=="wave2_arm_1",]
+
+w1_NEET <- w1[,c("ident", "neet")]
+table(w1$neet) # tudo 0 
+
+w2_NEET <- w2[,c("ident", "neet")]
+table(w2_NEET$neet) #0 1218, #1 467
+# Vou usar só essa no momento 
+
+#Merge com subjectid
+W2_NEET_id <- join_all(list(w2_NEET, subjectid), by = "ident", type = "inner")
+
+#Muito Na, tirando vai para 1685
+W2_NEET_id <- na.omit(W2_NEET_id)
+
+# Precisa do C para o merge com o fam 
+W2_NEET_id$subjectid <- paste0("C", W2_NEET_id$subjectid)
+
+names(W2_NEET_id)[names(W2_NEET_id) == "subjectid"] <- "IID"
+
+INPD2020_todos_final <- read.table("~/Analise_Trauma_PRS/Testes_N/INPD2020_todos_final.fam", quote="\"", comment.char="")
+
+setwd("~/Analises_da_Celina/")
+names(INPD2020_todos_final)[names(INPD2020_todos_final) == "V2"] <- "IID"
+
+W2_neet_iid <- join_all(list(INPD2020_todos_final, W2_NEET_id), by = "IID", type = "inner")
+colnames(W2_neet_iid)
+
+W2_neet_iid_filtrado <- subset(W2_neet_iid, select = c(1, 2, 8))
+names(W2_neet_iid_filtrado)[names(W2_neet_iid_filtrado) == "V1"] <- "FID"
+
+write.table(W2_neet_iid_filtrado, "./Pheno_NEET_W2_final.txt", sep="\t", col.names = T, row.names = F, quote = F)
+gsub()
+
+#######################################
+Covariaveis
+## Não tem no banco da Celina as informações de site e age, vou pegar do da Van 
+
+
+Ota_149BHRC_2023_01_15 <- readRDS("C:/Users/Adrielle/Downloads/Ota_149BHRC_2023_01_15.rds")
+w2 <- Ota_149BHRC_2023_01_15[Ota_149BHRC_2023_01_15$redcap_event_name=="wave2_arm_1",]
+w2_covar <- w2[,c("ident", "age", "site")]
+table(w2_covar$site)
+
+W2_covar_id <- join_all(list(w2_covar, subjectid), by = "ident", type = "inner")
+names(W2_covar_id)[names(W2_covar_id) == "subjectid"] <- "IID"
+W2_covar_id$IID <- paste0("C", W2_covar_id$IID)
+
+W2_covar_final <- join_all(list(W2_covar_id, Pheno_NEET_W2_final), by = "IID", type = "inner")
+write.table(W2_covar_final, "./Pheno_NEET_w2_covar_final", sep="\t", col.names = T, row.names = F, quote = F)
+table(Pheno_NEET_W2_final$neet)
+
+#######################################
+# Preparando o arquivo de genotipagem #
+#######################################
+
+# Imputação por michigan, 0.9 infoscore minimo 
+
