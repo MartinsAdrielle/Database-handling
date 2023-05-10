@@ -1,0 +1,887 @@
+#### MDD fenotype #####
+## File Ota_149BHRC_2023_01_15
+## Path in PC: /Documentos/Fenotipo_MDD_INPD
+## Send in 01/02/23
+## 12555 lines and 4255 columns  # nolint
+
+#Library
+library (plyr) #join_all
+library(dplyr) #select
+
+# Call bank 
+Ota_149BHRC_2023_01_15 <- readRDS("C:/Users/Adrielle/Documents/Fenotipo_MDD_INPD/Ota_149BHRC_2023_01_15.rds") # nolint
+
+# By wave
+w0_Banco_Van <- Ota_149BHRC_2023_01_15[Ota_149BHRC_2023_01_15$redcap_event_name=="wave0_arm_1",] #2511 
+
+# Select only mini
+W0_Banco_Van_mini <- select(w0_Banco_Van, contains("ident"), contains("imini")) #2511 #22
+## Dont have who respond mother or father, i will take from other file
+
+# File Spindola_HRC_09_01_2018_MINI
+Spindola_HRC_09_01_2018_MINI <- readRDS("C:/Users/Adrielle/Documents/Fenotipo_MDD_INPD/Spindola_HRC_09_01_2018_MINI.rds")
+
+# Take respondent variable 
+colnames(Spindola_HRC_09_01_2018_MINI)
+Spindola_mini_respondedor <- subset(Spindola_HRC_09_01_2018_MINI, select = c(1, 4, 8))
+
+# merge both by ident
+mini_Van_w0<- join_all(list(Spindola_mini_respondedor, W0_Banco_Van_mini), by = "ident", type = "inner") #2511 #25
+
+# respondent 1 = mother, 2 = father, 3 = Other??
+# Van file 
+mama <- mini_Van_w0[mini_Van_w0$respondent==1,] #2298
+papa <- mini_Van_w0[mini_Van_w0$respondent==2,] #115
+# Leticia file 
+mama <- mini[mini$respondent==1,] # 2298
+papa <- mini[mini$respondent==2,]
+
+# File: PlacasBroad.xlsx
+# Function to use all excel "abas"
+read_excel_allsheets <- function(filename, tibble = FALSE) {
+sheets <- readxl::excel_sheets(filename)
+x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+if(!tibble) x <- lapply(x, as.data.frame)
+names(x) <- sheets
+x
+}
+# read_excel_allsheets = le todas as abas do excel, criando uma lista dos data.frames
+# gsub = find and replace
+# rbindlist = junta uma lista de data.frames
+
+mysheets <- read_excel_allsheets("PlacasBroad.xlsx")
+a <- rbindlist(mysheets)
+
+# Separar o arquivo de responsáveis genotipados, entre pais (P) e mães (M)
+# Retirar as letras "P" e "M" do subjectid para que possamos fazer o pareamento
+# Parear a intersecção de subjectids presentes no arquivo de genotipagem e diagnóstico
+mama_Broad <- subset(a, grepl("M", a) ) #2234
+papa_Broad <- subset(a, grepl("P", a) ) #1072
+mama_Broad$subjectid <- gsub("M","",mama_Broad$a)
+papa_Broad$subjectid <- gsub("P","",papa_Broad$a)
+mama_geno <- join_all(list(mama_Broad,mama), by="subjectid",type = "inner") #2075
+papa_geno <- join_all(list(papa_Broad,papa), by="subjectid",type = "inner") #102
+
+# Cria uma nova coluna, onde soma todas as colunas de MINI para ver se tem algum diagnóstico positivo
+# Other = apresenta 1 ou mais diagnósticos; Controls = Não apresenta nada
+# Van File 
+mama_geno$iMINI_any <- rowSums(mama_geno[,c(6:26)])
+mama_geno$iMINI_any[mama_geno$iMINI_any>0] <- "Other"
+mama_geno$iMINI_any[mama_geno$iMINI_any==0] <- "Controls"
+table(mama_geno$iMINI_any)
+# Van file 
+# Mother
+# Controls    Other 
+#     1366      709 
+
+papa_geno$iMINI_any <- rowSums(papa_geno[,c(6:26)])
+papa_geno$iMINI_any[papa_geno$iMINI_any==0] <- "Controls"
+table(papa_geno$iMINI_any)
+# Father
+#Controls    Other 
+#      82       20 
+
+# Leticia file
+mama_geno$iMINI_any <- rowSums(mama_geno[,c(16:36)]) 
+mama_geno$iMINI_any[mama_geno$iMINI_any>0] <- "Other"
+mama_geno$iMINI_any[mama_geno$iMINI_any==0] <- "Controls"
+table(mama_geno$iMINI_any)
+# Leticia file 
+#Mother
+#Controls    Other 
+#    1374      701
+
+papa_geno$iMINI_any <- rowSums(papa_geno[,c(16:36)])
+papa_geno$iMINI_any[papa_geno$iMINI_any>0] <- "Other"
+papa_geno$iMINI_any[papa_geno$iMINI_any==0] <- "Controls"
+table(papa_geno$iMINI_any)
+#Father
+#Controls    Other 
+#      82       20
+
+mini <- readRDS("Spindola_HRC_09_01_2018_MINI.rds")
+F1_a_crude_di <- as.data.frame (read_sav ("F1_a_crude_di.sav"))
+
+É necessário criar nos arquivos F1_a_crude_di e no arquivo PlacasBroad (pais genotipados) uma coluna em comum em ambos (subjectid) para que assim possamos fazer o pareamento entre os dois arquivos e determinar quais pais dos indivíduos do arquivo F1_a_crude_di que foram genotipados.
+
+Em alguns casos, ambos o pai e a mãe de algum indivíduo foram genotipados, assim ao removermos o M/P ficaremos com duplicatas de subjectid que devem ser removidas.
+
+a$a <- gsub("P","",a$a)
+a$a <- gsub("M","",a$a)
+a$a <- gsub("C","",a$a)
+
+# Tem indivíduos que a mãe e o pai responderam, então precisamos deletar essas duplicatas de subjectid
+# Também remove as duplicatas de NA que existem devido aos espaços que sobraram da placa, mas deixa uma linha com NA no beta
+beta <- a[!duplicated(a$a),]
+# Deixar a coluna de subjectid na mesma classe em ambas tabelas para parear
+F1_a_crude_di$subjectid <- as.factor(F1_a_crude_di$subjectid)
+beta$subjectid <- as.factor(beta$a)
+
+# Mantém apenas as linhas que contém subjectid de individuos que foram genotipados + linhas com NA
+finais <- (F1_a_crude_di[F1_a_crude_di$subjectid %in% beta$subjectid ,])
+completos <- finais [complete.cases(finais[ ,9]),] # Todos que tem NA no subjectid são excluídos
+# completos <- finais[!is.na(finais$subjectid),] # Alternativa
+
+Crude_geno <- join_all(list(beta, completos),by = "subjectid")
+# existe um subjectid que está em beta mas não está em F1
+# tem outra linha que está como NA
+
+# respondent 1 = pai, 2 = mãe, 3 = Adotivo??
+# Separar o arquivo entre mães (1) e pais(2)
+# a = pais e mães genotipados
+# M.I.N.I. (Mini-International Neuropsychiatric Interview)
+# mini <- readRDS("Spindola_HRC_09_01_2018_MINI.rds")
+mama <- mini[mini$respondent==1,] # 2298
+papa <- mini[mini$respondent==2,] # 115
+a <- rbindlist(mysheets)
+
+# grepl = grep (search) + logical (true, false)
+# subset = retorna um subset que atende as condiçoes especificadas
+# gsub = find and replace
+# types inner = intersecção, full = tudo, left/right = pareia com mais a esquerda ou direita
+
+# Separar o arquivo de responsáveis genotipados, entre pais (P) e mães (M)
+# Retirar as letras "P" e "M" do subjectid para que possamos fazer o pareamento
+# Parear a intersecção de subjectids presentes no arquivo de genotipagem e diagnóstico
+mama_Broad <- subset(a, grepl("M", a) ) #2234
+papa_Broad <- subset(a, grepl("P", a) ) #1072
+mama_Broad$subjectid <- gsub("M","",mama_Broad$a)
+papa_Broad$subjectid <- gsub("P","",papa_Broad$a)
+mama_geno <- join_all(list(mama_Broad,mama), by="subjectid",type = "inner") #2075
+papa_geno <- join_all(list(papa_Broad,papa), by="subjectid",type = "inner") #102
+
+# 1 = subject ID
+# 3 = ibopenumber
+# 4379/4410 = BMdep
+# 4380/4411 = BMmani (TOC/ OCD)
+# 4387/4418 = BMpsych
+# 4396/4427 = BMADHD
+# Crude_geno = PlacasBroad.xlsx + F1_a_crude_di
+# paste = concatenar
+
+# Separar do arquivo Crude_geno os ids identificadores + alguns diagnósticos específicos
+# Recolocar o "M" e "P" para fazer o pareamento depois
+# Criar uma nova coluna com a soma de todos os diagnóstico fazendo uma contagem somatória dos 4.
+FLImama <- Crude_geno[,c(1,3,4379,4380,4387,4396)]
+FLImama$other<- rowSums(FLImama[,3:6])
+FLIpapa <- Crude_geno[,c(1,3,4410,4411,4418,4427)]
+FLIpapa$other <- rowSums(FLIpapa[,c(3:6)])
+
+# Precisa pra parear depois no PRSice
+FLImama$a <- paste("M",FLImama$subjectid,sep = "")
+FLIpapa$a <- paste("P",FLIpapa$subjectid,sep = "")
+
+
+# Cria uma nova coluna, onde soma todas as colunas de MINI para ver se tem algum diagnóstico positivo
+# Other = apresenta 1 ou mais diagnósticos; Controls = Não apresenta nada
+mama_geno$iMINI_any <- rowSums(mama_geno[,c(16:36)])
+mama_geno$iMINI_any[mama_geno$iMINI_any>0] <- "Other"
+mama_geno$iMINI_any[mama_geno$iMINI_any==0] <- "Controls"
+FLImama$other[FLImama$other>0] <- "Other"
+FLImama$other[FLImama$other==0] <- "Controls"
+table(FLImama$other)
+table(mama_geno$iMINI_any)
+
+papa_geno$iMINI_any <- rowSums(papa_geno[,c(16:36)])
+papa_geno$iMINI_any[papa_geno$iMINI_any>0] <- "Other"
+papa_geno$iMINI_any[papa_geno$iMINI_any==0] <- "Controls"
+FLIpapa$other[FLIpapa$other>0] <- "Other"
+FLIpapa$other[FLIpapa$other==0] <- "Controls"
+table(FLIpapa$other)
+table(papa_geno$iMINI_any)
+
+# rbind = combinação de tabelas por linhas  (precisamos de um mesmo set de colunas para combinar)
+# Identical = comparação lógica de igualdade (dim = dimensões da tabela; names = nome coluna)
+mama_MINIeFLI <- join_all(list(mama_Broad,mama_geno,FLImama), by = "a")
+papa_MINIeFLI <- join_all(list(papa_Broad,papa_geno,FLIpapa), by = "a")
+identical(dim(mama_MINIeFLI)[2],dim(papa_MINIeFLI)[2]) # Sample.Kit
+names(mama_MINIeFLI) <- gsub("BM","",names(mama_MINIeFLI))
+names(papa_MINIeFLI) <- gsub("BF","",names(papa_MINIeFLI))
+names(mama_MINIeFLI)[43] <- "psych"
+# mama_MINIeFLI$skincolor <- mama_MINIeFLI$mskincolor # Não entendi pq precisa
+# papa_MINIeFLI$skincolor <- papa_MINIeFLI$fskincolor # Não entendi pq precisa
+identical(names(mama_MINIeFLI),names(papa_MINIeFLI)) # mesmo nome todas colunas
+MINIeFLI <- as.data.frame(rbind(mama_MINIeFLI,papa_MINIeFLI))
+
+# Criar nova coluna repleta de 1
+# Caso tenha dado positivo no MINI ou F1 coloca -9
+MINIeFLI$PrimaryDisorder <- 1
+MINIeFLI$PrimaryDisorder[MINIeFLI$other=="Other"|MINIeFLI$iMINI_any=="Other"] <- -9
+table(MINIeFLI$PrimaryDisorder)
+
+# Casos em que iMINI_cur_any_anx = 1 colocar 2
+# 1 = nada; 2 = anx; -9 = alguma outra
+MINIeFLI$ANX <- MINIeFLI$PrimaryDisorder
+MINIeFLI$ANX[MINIeFLI$iMINI_cur_any_anx==1] <- 2
+table(MINIeFLI$ANX)
+
+# 1 = nada; 2 = BD; -9 = alguma outra
+MINIeFLI$BD <- MINIeFLI$PrimaryDisorder
+MINIeFLI$BD[MINIeFLI$iMINI_cur_man==1|MINIeFLI$iMINI_lif_man==1] <- 2
+table(MINIeFLI$BD)
+
+# 1 = nada; 2 = ADHD; -9 = alguma outra
+MINIeFLI$ADHD <- MINIeFLI$PrimaryDisorder
+MINIeFLI$ADHD[MINIeFLI$iMINI_child_adhd==1] <- 2
+table(MINIeFLI$ADHD)
+
+# 1 = nada; 2 = SCZ; -9 = alguma outra
+MINIeFLI$SCZ <- MINIeFLI$PrimaryDisorder
+MINIeFLI$SCZ[MINIeFLI$iMINI_lif_psych==1|MINIeFLI$iMINI_cur_psych==1] <- 2
+table(MINIeFLI$SCZ)
+
+# Isso é igual a $PrimaryDisorder só que ao invés de -9 é 2
+MINIeFLI$AnyPsyDisorder <- MINIeFLI$PrimaryDisorder
+MINIeFLI$AnyPsyDisorder <- gsub(-9 ,2,MINIeFLI$AnyPsyDisorder)
+table(MINIeFLI$AnyPsyDisorder)
+
+# 1 = nada; 2 = BD; -9 = alguma outra
+MINIeFLI$MDD <- MINIeFLI$PrimaryDisorder
+MINIeFLI$MDD[MINIeFLI$iMINI_cur_dep==1|MINIeFLI$iMINI_cur_rdep==1] <- 2
+table(MINIeFLI$MDD)
+
+# Children Pheno
+# Adaptado de Fenotipagem_Geno_INPD_Lucas_V2.Rmd
+- **Santoro_HRC_20181113.sav:** Dados da W0 e W1, com informações pessoais, de família e de diagnóstico
+
+- **BHRCS_Ratingfinalw2.sav:** Dados da W2, com informações detalhadas de diagnóstico
+
+- **Vanessa_HRC_20181127-4.sav:** Dados da W0 e W1, porém apresentam duplicatas e triplicatas (da pra ver pelo numero de linhas)
+
+- **dawba_20200526.rds:** Dados da W0, W1 e W2, com informações de diagnóstico
+
+- **Geno_Broad_Aoliv.csv:** Informações dos indivíduos que foram genotipados
+
+## **Chamar fentóipos das W0, W1 e W2**
+# Van + dawba
+Vanessa_HRC_20181127_4 <- read_sav("Vanessa_HRC_20181127-4.sav")
+dawbanet_df <- readRDS("dawba_20200526.rds")
+
+#No arquivo da Van tem linhas duplicadas e algumas triplicadas. 
+Van2 <- Vanessa_HRC_20181127_4[order(Vanessa_HRC_20181127_4$dcptsd,decreasing = T),]
+Van3 <- Van2[!duplicated(Van2$subjectid),]
+
+# Cria uma nova coluna chamada dcanyanx_pgc
+# Se qualquer uma dessas 5 variaveis serem = 2 ele vai colocar 2 na nova coluna, se não 0
+# if_else (se o sistema for verdadeiro, true (2), else false(0))
+dawbanet_df$dcanyanx_pgc <- if_else(dawbanet_df$dcpanic==2 | dawbanet_df$dcagor==2 | dawbanet_df$dcgena==2 | 
+                                     dawbanet_df$dcsoph==2 | dawbanet_df$dcspph==2, 2 , 0)
+
+## **Chamar quem foi genotipado**
+# gsub = find and replace
+# Cria uma nova coluna chamda de subjectid com os valores de Collaborator.Sample.ID sem a letra "C"
+geno <- read.csv("Geno_Broad_Aoliv.csv")
+geno$subjectid <- gsub("C","",geno$Collaborator.Sample.ID)
+geno$ordem <- 1:2247 # Tem uma linha em branco nisso
+
+# Separar por wave
+ w0 <- dawbanet_df[dawbanet_df$redcap_event_name=="wave0_arm_1",]
+ w1 <- dawbanet_df[dawbanet_df$redcap_event_name=="wave1_arm_1",]
+ w2 <- dawbanet_df[dawbanet_df$redcap_event_name=="wave2_arm_1",]
+
+# Van + dawba
+ colnames(w0)[-1] <- paste("W0", colnames(w0)[-1], sep = "_")
+ colnames(w1)[-1] <- paste("W1", colnames(w1)[-1], sep = "_")
+ colnames(w2)[-1] <- paste("W2", colnames(w2)[-1], sep = "_")
+
+# juntar tudo (geno + W0 + W1 + W2)
+junto <- join_all(list(geno,w0,w1,w2),by = "subjectid")
+
+# Se NA, vou considerar sem doença (0) 
+junto[is.na(junto)] <- 0
+
+# Select by disorder ele recebe "2" se tiver disorder em todas as waves e se nunca teve recebe "0"
+# Psicose
+junto$everPsych <- if_else(junto$W0_dcpsych==2|junto$W1_dcpsych==2|junto$W2_dcpsych==2,2,0)
+table(junto$everPsych)
+
+# Ansiedade
+junto$everAnx <- if_else(junto$W0_dcanyanx_pgc==2|junto$W1_dcanyanx_pgc==2|junto$W2_dcanyanx_pgc==2,2,0)
+table(junto$everAnx)
+
+# Bipolar
+junto$everBD <- if_else(junto$W0_dcmania==2| junto$W1_dcmania==2| junto$W2_dcmania==2,2,0)
+table(junto$everBD)
+
+# ADHD
+junto$everHK <- if_else(junto$W0_dcanyhk==2| junto$W1_dcanyhk==2| junto$W2_dcanyhk==2,2,0)
+table(junto$everHK)
+
+# Depressão
+junto$everMDD <- if_else(junto$W0_dcmadep==2|junto$W1_dcmadep==2|junto$W2_dcmadep==2,2,0)
+table(junto$everMDD)
+
+# PTSD
+junto$everPTSD <- if_else(junto$W0_dcptsd ==2|junto$W1_dcptsd==2|junto$W2_dcptsd==2,2,0)
+table(junto$everPTSD)
+
+# TOC
+junto$everOCD <- if_else(junto$W0_dcocd==2| junto$W1_dcocd==2|junto$W2_dcocd==2,2,0)
+table(junto$everOCD)
+
+# Qualquer Transtorno
+junto$everAny <- if_else(junto$W0_dcany==2|junto$W1_dcany==2|junto$W2_dcany==2,2,0)
+table(junto$everAny)
+
+- -9 = apresenta algum transtorno (any)
+
+- 0 = não apresenta transtorno
+
+- 2 = apresenta um transtorno específico (nesses casos usamos: Ansiedade, Bipolar, PTSD, ADHD, Depressão, Qualquer Transtorno)
+
+# Ansiedade
+junto$ANX <- junto$everAny
+junto$ANX <- gsub(2,-9,junto$ANX)
+junto$ANX <- gsub(0,1,junto$ANX)
+junto$ANX[junto$everAnx==2] <- 2 # todos aqueles que apresentaram Anx nas 3 waves viram 2 ao inves de -9
+table(junto$ANX)
+
+# Bipolar
+junto$BD <- junto$everAny
+junto$BD <- gsub(2,-9,junto$BD)
+junto$BD <- gsub(0,1,junto$BD)
+junto$BD[junto$everBD==2] <- 2
+table(junto$BD)
+
+# PTSD
+junto$PTSD <- junto$everAny
+junto$PTSD <- gsub(2,-9,junto$PTSD)
+junto$PTSD <- gsub(0,1,junto$PTSD)
+junto$PTSD[junto$everPTSD==2] <- 2
+table(junto$PTSD)
+
+# ADHD
+junto$ADHD <- junto$everAny
+junto$ADHD <- gsub(2,-9,junto$ADHD)
+junto$ADHD <- gsub(0,1,junto$ADHD)
+junto$ADHD[junto$everHK==2] <- 2
+table(junto$ADHD)
+
+# Depressão
+junto$MDD <- junto$everAny
+junto$MDD <- gsub(2,-9,junto$MDD)
+junto$MDD <- gsub(0,1,junto$MDD)
+junto$MDD[junto$everMDD==2] <- 2
+table(junto$MDD)
+
+# Qualquer Transtorno
+# Nesse caso não tem -9, porque todo -9 vira 2 no final
+junto$AnyPsyDisorder <- junto$everAny
+junto$AnyPsyDisorder <- gsub(2,-9,junto$AnyPsyDisorder)
+junto$AnyPsyDisorder <- gsub(0,1,junto$AnyPsyDisorder)
+junto$AnyPsyDisorder[junto$everAny==2] <- 2
+table(junto$AnyPsyDisorder)
+
+write.table(junto[,c("subjectid","ANX","BD","PTSD","ADHD", "MDD", "AnyPsyDisorder")],"Pheno_Children.txt", col.names = T,row.names = F,quote = F) #2247
+
+## Next test: try merge with .fam file 
+## File INPD2020_todos_final
+## Path in Brain: /genetica_1/Genotipagem_INPD_Broad2019/PGC_NIMH_Salum_PTSD_GSA-MD_v1_3/RP-1194/processamento_inpd2019/analise_final_idsarrumados/arquivosfinais 
+## Same file in imputation and GENESIS 
+
+#### Merge parents and childrens 
+Parents_pheno <- MINIeFLI[c(1,40,47:52)]
+colnames(Parents_pheno) <- c('Parents_id','subjectid','ANX_p','BD_p','ADHD_p','SCZ_p', 'AnyPsyDisorder_p','MDD_p',) #3306 
+Pheno_todos <- join_all(list(Pheno_Children, Parents_pheno), by = "subjectid", type = 'right' )
+
+
+# Select only Children with no disorder and no family history
+Children_controls <- Pheno_todos[Pheno_todos$MDD == '1' & Pheno_todos$ANX == '1' & Pheno_todos$BD=='1'
+& Pheno_todos$PTSD=='1' & Pheno_todos$ADHD=='1' & Pheno_todos$AnyPsyDisorder=='1' & Pheno_todos$AnyPsyDisorder_p=='1', ] # 1364 with NA
+
+# Selecionar só subject ID e MDD feno 
+Children_controls_filtrado <- subset(Children_controls, select = c(1,6))
+
+#As linhas foram duplicadas quando tinham mãe e pai, tenho que tirar 
+Sem_duplicatas_Children_control <- Children_controls_filtrado[!duplicated(Children_controls_filtrado$subjectid),] #842
+
+#Sem NA
+Sem_duplicatas_Children_control_na <-na.omit(Sem_duplicatas_Children_control) #841
+
+# Cases
+
+Children_cases <- Pheno_Children[Pheno_Children$MDD == '2' & Pheno_Children$ANX == '-9' & Pheno_Children$BD=='-9'
+                                 & Pheno_Children$PTSD=='-9' & Pheno_Children$ADHD=='-9' & Pheno_Children$SCZ=='-9', ] #142 
+
+Children_cases_filtrados <- subset(Children_cases, select = c(1,6))
+
+# Juntar as duas 
+
+Children_feno_final <-rbind(Children_cases_filtrados,Sem_duplicatas_Children_control_na) #983
+
+# Colocar C no final 
+
+Children_feno_final$subjectid<- paste("C",Children_feno_final$subjectid,sep = "")
+
+# Parents_pheno #3306
+
+Parents_cases <- Parents_pheno[Parents_pheno$MDD == '2' & Parents_pheno$ANX == '-9' & Parents_pheno$BD=='-9'
+                                 & Parents_pheno$ADHD=='-9' & Parents_pheno$SCZ=='-9', ] #115
+
+Parents_controls <- Parents_pheno[Parents_pheno$MDD == '1' & Parents_pheno$ANX == '1' & Parents_pheno$BD=='1'
+                                                   & Parents_pheno$ADHD=='1' & Parents_pheno$SCZ=='1' & Parents_pheno$AnyPsyDisorder =='1', ] # 2087
+
+
+Parents_cases_filtrados <- subset(Parents_cases, select = c(1,8))
+Parents_controls_filtrados <- subset(Parents_controls, select = c(1,8))
+
+Parents_feno_final <-rbind(Parents_cases_filtrados,Parents_controls_filtrados) #2202
+
+names(Parents_feno_final)[names(Parents_feno_final) == "a"] <- "subjectid"
+
+# Juntar os dois 
+Case_control_feno_final <-rbind(Children_feno_final,Parents_feno_final) #3185
+
+# Fazer merge com o fam da genotipagem #5367
+
+names(Case_control_feno_final)[names(Case_control_feno_final) == "subjectid"] <- "V2"
+
+Case_control_feno_final_update <- join_all(list(Case_control_feno_final, imputado_sex),by = "V2", type="inner") #3070
+table(Case_control_feno_final_update$MDD)
+#2820 controles
+#250 casos
+
+colnames(Case_control_feno_final_update)
+
+Case_control_feno_final_update_feno <- subset(Case_control_feno_final_update, select = c(3,1,2))
+
+
+# Parents Pheno e Children feno para FID
+colnames(Parents_pheno)
+colnames(Children_feno_final)
+Parents_FID <- subset(Parents_pheno, select = c(2,1))
+Childrens_FID <- subset(Children_feno_final, select = c(1,1))
+
+colnames(Parents_FID) <- c('FID','IID')
+colnames(Childrens_FID) <- c('FID','IID')
+
+# Tirar o C do FID
+Childrens_FID$FID <- gsub("C","",Childrens_FID$FID)
+
+# Juntar Crianças e pais 
+Childrens_parents_FID <-rbind(Childrens_FID,Parents_FID)
+
+colnames(Case_control_feno_final_update_feno)
+colnames(Case_control_feno_final_update_feno) <- c('V1','IID','MDD')
+
+Case_control_feno_final_update_FID <- join_all(list(Case_control_feno_final_update_feno, Childrens_parents_FID),by = "IID", type="inner") #3070
+
+# Finalmente FID, IID e feno de todos 
+colnames(Case_control_feno_final_update_FID)
+
+#upd keep e feno
+Case_control_finalzao_upd_keep <- subset(Case_control_feno_final_update_FID, select = c(1,2))
+colnames(Case_control_finalzao_upd_keep) <- c('FID','IID')
+write.table(Case_control_finalzao_upd_keep, "./Case_control_finalzao_upd_keep ", sep="\t", col.names = T, row.names = F, quote = F)
+
+
+#upd keep e feno
+Case_control_finalzao_upd_pheno <- subset(Case_control_feno_final_update_FID, select = c(1,2,3))
+colnames(Case_control_finalzao_upd_pheno) <- c('FID','IID','MDD')
+write.table(Case_control_finalzao_upd_pheno, "./Case_control_finalzao_upd_pheno  ", sep="\t", col.names = T, row.names = F, quote = F)
+
+
+#upd_FID_plink
+Case_control_finalzao_upd_FID <- subset(Case_control_feno_final_update_FID, select = c(1,2,4,2))
+colnames(Case_control_finalzao_upd_FID) <- c('FID','IID','FID','IID')
+write.table(Case_control_finalzao_upd_FID, "./Case_control_finalzao_upd_FID", sep="\t", col.names = T, row.names = F, quote = F)
+
+# Pegar idade/estado das crianças e pais 
+w0 <- Ota_149BHRC_2023_01_15[Ota_149BHRC_2023_01_15$redcap_event_name=="wave0_arm_1",]
+Pheno_idade_estado <- subset(w0, select = c(1, 6, 7,15,29,31))
+Pheno_idade_estado <- join_all(list(Pheno_idade_estado, subjectid), by = "ident", type = "inner")
+
+# Mãe 
+# File mamabroad
+Pheno_idade_estado_mae <- join_all(list(Pheno_idade_estado, mama_Broad), by = "subjectid", type = "inner")
+colnames(Pheno_idade_estado_mae)
+Pheno_idade_estado_mae_filtrado <- subset(Pheno_idade_estado_mae, select = c(8, 7, 5, 2, 3))
+names(Pheno_idade_estado_mae_filtrado)[names(Pheno_idade_estado_mae_filtrado) == "mother_age"] <- "age"
+
+
+# Pai
+Pheno_idade_estado_pai <- join_all(list(Pheno_idade_estado, papa_Broad), by = "subjectid", type = "inner")
+colnames(Pheno_idade_estado_pai)
+Pheno_idade_estado_pai_filtrado <- subset(Pheno_idade_estado_pai, select = c(8, 7, 6, 2, 3))
+names(Pheno_idade_estado_pai_filtrado)[names(Pheno_idade_estado_pai_filtrado) == "father_age"] <- "age"
+
+# Criança 
+Pheno_idade_estado_child <- join_all(list(Pheno_idade_estado, Pheno_Children), by = "subjectid", type = "inner")
+colnames(Pheno_idade_estado_child)
+Pheno_idade_estado_child_filtrado <- subset(Pheno_idade_estado_child, select = c(7, 4, 2))
+Pheno_idade_estado_child_filtrado$subjectid<- paste("C",Pheno_idade_estado_child_filtrado$subjectid,sep = "")
+
+# Merge pais 
+
+pais_idade_estado  <- as.data.frame(rbind(Pheno_idade_estado_pai_filtrado,Pheno_idade_estado_mae_filtrado))
+colnames(pais_idade_estado)
+pais_idade_estado <- subset(pais_idade_estado, select = c(1,3:4))
+names(pais_idade_estado)[names(pais_idade_estado) == "a"] <- "subjectid"
+
+# Merge com crianças
+child_parents_idade_pheno  <- as.data.frame(rbind(pais_idade_estado,Pheno_idade_estado_child_filtrado))
+
+# Juntar com o FID e fenotipo dos IDS finais 
+names(child_parents_idade_pheno )[names(child_parents_idade_pheno ) == "subjectid"] <- "IID"
+
+FID_pheno <- join_all(list(Case_control_finalzao_upd_FID, Case_control_finalzao_upd_pheno), by = "IID", type = "inner")
+colnames(FID_pheno)
+FID_pheno_filtrado <- subset(FID_pheno, select = c(3, 2, 6))
+
+Fenotipo_todos_finalzao_idade <- join_all(list(FID_pheno_filtrado, child_parents_idade_pheno), by = "IID", type = "left")
+write.table(Fenotipo_todos_finalzao_idade, "./Fenotipo_todos_finalzao_idade.txt", sep="\t", col.names = T, row.names = F, quote = F)
+
+
+#####################################################################################################
+# Vou pro Cerebro fazer o GENESIS 
+#####################################################################################################
+# Path: /mnt/genetica_2/Adrielle_imputacao_INPD_Pos_imputation/new_info_score_update/GENESIS_final_cases_controls
+# File: imputado_QC_Michigan_infoscore
+# UPD Files: 
+
+# Hyperlink para pasta certa  
+ln -n imputado_QC_Michigan_infoscore* ./GENESIS_Final_cases_controls/
+
+# keep samples 
+plink --bfile imputado_QC_Michigan_infoscore --keep Case_control_finalzao_upd_keep --make-bed --out Case_control_only_Michigan_infoscore
+
+# update pheno 
+plink --bfile Case_control_only_Michigan_infoscore --pheno ./Case_control_finalzao_upd_pheno --make-bed --out Case_control_only_Michigan_infoscore_pheno
+
+# update FID
+plink --bfile Case_control_only_Michigan_infoscore_pheno --update-ids ./Case_control_finalzao_upd_FID --make-bed --out Case_control_only_Michigan_infoscore_pheno_FID_final
+
+# pruning 
+plink2 --bfile ./Case_control_only_Michigan_infoscore_pheno_FID_final --indep-pairwise 1000 80 0.1
+
+# remove pruned variants 
+plink --bfile Case_control_only_Michigan_infoscore_pheno_FID_final --exclude plink.prune.out --make-bed --out Case_control_only_GENESIS_pruned_final_maf
+
+################################
+# In R script: Script_GENESIS_final.R 
+
+############################## Teste de hipotesis ##################################
+
+1) Dados de genotipagem apenas das crianças:
+- Casos: Crianças com MDD em qualquer uma das waves
+- Controles: Crianças sem qualquer transtorno mental todas as waves
+- Covariáveis: Estado, idade na W2 ou na última que teve o fenótipo coletado 
+# Mudei para 0= controle, 1= caso
+
+#### Casos ####
+
+junto$everMDD <- if_else(junto$W0_dcmadep==2|junto$W1_dcmadep==2|junto$W2_dcmadep==2,1,0)
+table(junto$everMDD) # 369 
+
+child_case_hipotese_1 <- junto[junto$everMDD==1,]
+colnames(child_case_hipotese_1)
+child_case_hipotese_1_fil  <- subset(child_case_hipotese_1, select = c(11,142)) #
+names(child_case_hipotese_1_fil )[names(child_case_hipotese_1_fil ) == "everMDD"] <- "MDD"
+
+
+#### Controles ####
+# Se NA, vou considerar 10
+junto[is.na(junto)] <- 10
+
+# Filtrar se tem 10 em alguma wave, 2 se sim 0 se não
+junto$avaliação <- if_else(junto$W0_redcap_event_name==10|junto$W1_redcap_event_name==10|junto$W2_redcap_event_name==10,2,0)
+table(junto$avaliação) # 1560 = 0, 2 = 687
+
+#Checar se o comando deu certo 
+junto_filtrado  <- subset(junto, select = c(11,13,55,97,139)) #1560 # Checar com a Van
+
+#Selecionar esses individuos 
+junto_todas_waves <- junto[junto$avaliação==0,] #1560
+
+# # Selecionar n disorder
+junto_todas_waves$everAny <- if_else(junto_todas_waves$W0_dcany==2|junto_todas_waves$W1_dcany==2|junto_todas_waves$W2_dcany==2,2,0)
+table(junto_todas_waves$everAny) # 0 = 757
+
+# Qualquer Transtorno
+# Nesse caso nÃ£o tem -9, porque todo -9 vira 2 no final
+junto_todas_waves$AnyPsyDisorder <- junto_todas_waves$everAny
+junto_todas_waves$AnyPsyDisorder <- gsub(2,-9,junto_todas_waves$AnyPsyDisorder)
+junto_todas_waves$AnyPsyDisorder <- gsub(0,1,junto_todas_waves$AnyPsyDisorder)
+junto_todas_waves$AnyPsyDisorder[junto_todas_waves$everAny==2] <- 2
+table(junto_todas_waves$AnyPsyDisorder) # 1 = 757 
+
+child_control_hipotese_1 <- junto_todas_waves[junto_todas_waves$everAny==0,]
+child_control_hipotese_1_fil  <- subset(child_control_hipotese_1, select = c(11,140)) #
+names(child_control_hipotese_1_fil )[names(child_control_hipotese_1_fil ) == "everAny"] <- "MDD"
+
+# Juntar caso e controle 
+Child_hipotese_1_cc <-rbind(child_case_hipotese_1_fil,child_control_hipotese_1_fil) # 1126
+
+# Pegar o fenotipo 
+w0 <- Ota_149BHRC_2023_01_15[Ota_149BHRC_2023_01_15$redcap_event_name=="wave0_arm_1",]
+colnames(w0)
+w0 <- subset(w0, select = c(1,6,7,8,15))
+
+w1 <- Ota_149BHRC_2023_01_15[Ota_149BHRC_2023_01_15$redcap_event_name=="wave1_arm_1",]
+w1 <- subset(w1, select = c(1,6,7,8,15))
+
+w2 <- Ota_149BHRC_2023_01_15[Ota_149BHRC_2023_01_15$redcap_event_name=="wave2_arm_1",]
+w2 <- subset(w2, select = c(1,6,7,8,15))
+
+colnames(w0)[-1] <- paste("W0", colnames(w0)[-1], sep = "_")
+colnames(w1)[-1] <- paste("W1", colnames(w1)[-1], sep = "_")
+colnames(w2)[-1] <- paste("W2", colnames(w2)[-1], sep = "_")
+
+# juntar tudo (subjectid + W0 + W1 + W2)
+fenotipo_cc_hipotese_1 <- join_all(list(subjectid,w0,w1,w2),by = "ident")
+
+# Juntar com caso e controle para MDD
+fenotipo_cc_hipotese_1_selecionados <- join_all(list(Child_hipotese_1_cc,fenotipo_cc_hipotese_1),by = "subjectid", type = "inner")
+
+#### Pheno ####
+w0 <- Ota_149BHRC_2023_01_15[Ota_149BHRC_2023_01_15$redcap_event_name=="wave0_arm_1",]
+colnames(w0)
+w0 <- subset(w0, select = c(1,6,7,8,15))
+
+w1 <- Ota_149BHRC_2023_01_15[Ota_149BHRC_2023_01_15$redcap_event_name=="wave1_arm_1",]
+w1 <- subset(w1, select = c(1,6,7,8,15))
+
+w2 <- Ota_149BHRC_2023_01_15[Ota_149BHRC_2023_01_15$redcap_event_name=="wave2_arm_1",]
+w2 <- subset(w2, select = c(1,6,7,8,15))
+
+colnames(w0)[-1] <- paste("W0", colnames(w0)[-1], sep = "_")
+colnames(w1)[-1] <- paste("W1", colnames(w1)[-1], sep = "_")
+colnames(w2)[-1] <- paste("W2", colnames(w2)[-1], sep = "_")
+
+# juntar tudo (subjectid + W0 + W1 + W2)
+fenotipo_cc_hipotese_1 <- join_all(list(subjectid,w0,w1,w2),by = "ident")
+
+# Juntar com caso e controle para MDD
+fenotipo_cc_hipotese_1_selecionados <- join_all(list(Child_hipotese_1_cc,fenotipo_cc_hipotese_1),by = "subjectid", type = "inner")
+colnames(fenotipo_cc_hipotese_1_selecionados)
+feno_selecao <- subset(fenotipo_cc_hipotese_1_selecionados, select = c(1,15,11,7,2,12,13))
+
+feno_selecao$idadew2 <-is.na(feno_selecao$w2_age)
+feno_selecao$idade <- if_else(feno_selecao$idadew2=="TRUE",feno_selecao$W1_age,feno_selecao$W2_age)
+feno_selecao$idade2 <-is.na(feno_selecao$idade)
+feno_selecao$idade_final <- if_else(feno_selecao$idade2=="TRUE",feno_selecao$W0_age,feno_selecao$idade)
+colnames(feno_selecao)
+
+feno_selecao_merge <- subset(feno_selecao, select = c(1,12,6,7,5))
+names(feno_selecao_merge )[names(feno_selecao_merge ) == "subjectid"] <- "IID"
+
+imputado_sex <- read.table("~/Fenotipo_MDD_INPD/imputado_sex.fam", quote="\"", comment.char="")
+colnames(imputado_sex)
+names(imputado_sex )[names(imputado_sex ) == "V2"] <- "IID"
+
+feno_selecao_merge$IID <- paste("C",feno_selecao_merge$IID,sep = "")
+child_case_hipotese_1_pheno <- join_all(list(imputado_sex, feno_selecao_merge),by = "IID", type = "right")
+
+colnames(child_case_hipotese_1_pheno)
+child_case_hipotese_1_pheno_final <- subset(child_case_hipotese_1_pheno, select = c(2,1,7,8,9,10))
+colnames(child_case_hipotese_1_pheno_final)
+write.table(child_case_hipotese_1_pheno_final, "./Case_control_hipotese_1_pheno_final", sep="\t", col.names = T, row.names = F, quote = F)
+
+## Keep e Feno
+Case_control_hipotese_1_upd_keep <- subset(child_case_hipotese_1_pheno_final, select = c(1,2))
+colnames(Case_control_hipotese_1_upd_keep) <- c('FID','IID')
+write.table(Case_control_hipotese_1_upd_keep, "./Case_control_hipotese_1_upd_keep ", sep="\t", col.names = T, row.names = F, quote = F)
+
+Case_control_hipotese_1_upd_pheno <- subset(child_case_hipotese_1_pheno_final, select = c(1,2,6))
+colnames(Case_control_hipotese_1_upd_pheno) <- c('FID','IID','MDD')
+write.table(Case_control_hipotese_1_upd_pheno, "./Case_control_hipotese_1_upd_pheno  ", sep="\t", col.names = T, row.names = F, quote = F)
+
+#####################################################################################################
+# Vou pro Cerebro fazer o GENESIS 
+#####################################################################################################
+# Path: /mnt/genetica_2/Adrielle_imputacao_INPD_Pos_imputation/new_info_score_update/GENESIS_final_cases_controls/Hipotese_1
+# File: imputado_QC_Michigan_infoscore
+# UPD Files: 
+
+# Hyperlink para pasta certa  
+ln -n ../../imputado_QC_Michigan_infoscore* ./GENESIS_Final_cases_controls/
+
+# keep samples #1109
+plink --bfile imputado_QC_Michigan_infoscore --keep Case_control_hipotese_1_upd_keep --make-bed --out Case_control_only_Michigan_infoscore_hipotese_1
+
+# update pheno #precisa ser 1 e 2
+phenotype <-read.table("./Case_control_hipotese_1_upd_pheno", header=T)
+> phenotype$MDD <- gsub(1,2,phenotype$MDD)
+> phenotype$MDD <- gsub(0,1,phenotype$MDD)
+
+write.table(Case_control_hipotese_1_upd_pheno, "./Case_control_hipotese_1_upd_pheno ", sep="\t", col.names = T, row.names = F, quote = F)
+
+plink --bfile Case_control_only_Michigan_infoscore_hipotese_1 --pheno 'Case_control_hipotese_1_upd_pheno.txt '  --make-bed --out Case_control_only_Michigan_infoscore_pheno_hipotese_1
+
+# update FID 
+ phenotype <-read.table("./Case_control_hipotese_1_upd_keep", header=T)
+
+ child_case <- subset(phenotype, select = c(1,2,2,2))
+ child_case$  <- gsub("C","",Childrens_FID$FID)
+ child_case$IID.1  <- gsub("C","",child_case$IID.1)
+ colnames(child_case) <- c('FID','IDD','FID','IID')
+ write.table(child_case, "./Case_control_finalzao_upd_FID ", sep="\t", col.names = T, row.names = F, quote = F)
+
+plink --bfile Case_control_only_Michigan_infoscore_pheno_hipotese_1 --update-ids ./Case_control_finalzao_upd_FID\  --make-bed --out Case_control_only_Michigan_infoscore_pheno_FID_final
+
+# pruning 
+plink2 --bfile ./Case_control_only_Michigan_infoscore_pheno_hipotese_1 --indep-pairwise 1000 80 0.1
+
+# remove pruned variants # 66296 variants and 1109 people pass QC
+plink --bfile Case_control_only_Michigan_infoscore_pheno_hipotese_1 --exclude plink2.prune.out --make-bed --out Case_control_only_GENESIS_pruned_final_maf_hipotese_1
+
+### Voltar para o GENESIS #Com ou sem prunning?
+king -b Case_control_only_Michigan_infoscore_pheno_FID_final.bed --kinship
+
+plink --bfile Case_control_only_GENESIS_pruned_final_maf_hipotese_1 --update-ids ./Case_control_finalzao_upd_FID\  --make-bed --out Case_control_only_GENESIS_pruned_final_maf_hipotese_1_FID
+king -b Case_control_only_GENESIS_pruned_final_maf_hipotese_1_FID.bed --kinship 
+
+########################################################
+Hipote 2 
+
+Dados de genotipagem apenas das crianças:
+- Casos: Crianças com MDD em qualquer uma das waves
+- Controles: Crianças sem qualquer transtorno mental em qualquer uma das waves E sem HF de MDD (MINI dos pais)
+- Covariáveis: Estado, idade na W2 ou na última que teve o fenótipo coletado
+
+Parents_cases_hip_2 <- Parents_pheno[Parents_pheno$MDD == '2', ] # 330
+controls_com_HF <- join_all(list(Parents_cases_hip_2, Children_controls_filtrado), by = "subjectid", type = "inner") #22 
+
+names(controls_com_HF)[names(controls_com_HF) == "subjectid"] <- "IID"
+controls_com_HF$IID <- paste0("C", controls_com_HF$IID)
+
+controls_todos_hip_1 <- Pheno_final_hipotese_1[Pheno_final_hipotese_1$MDD==0,]
+controls <- join_all(list(controls_todos_hip_1, controls_com_HF ), by = "IID", type = "inner") #13
+
+colnames(controls_remove_hip_2) <- c('FID','IDD')
+controls_remove_hip_2$FID  <- gsub("C","",controls_remove_hip_2$FID)
+
+write.table(controls_remove_hip_2, "./controls_remove_hip_2", sep="\t", col.names = T, row.names = F, quote = F)
+
+
+######################################################################################
+# Brain
+
+# Hyperlink para pasta certa  
+sudo ln -n ../Case_control_only_Michigan_infoscore_pheno_FID_final* ./
+
+ plink2 --bfile Case_control_only_Michigan_infoscore_pheno_FID_final --remove ./controls_remove_hip_2.txt --make-bed --out Case_control_Hipotese_2_final
+ #1096 samples (528 females, 568 males)
+
+ plink2 --bfile ./Case_control_Hipotese_2_final --indep-pairwise 1000 80 0.1
+
+ plink --bfile Case_control_Hipotese_2_final --exclude plink2.prune.out --make-bed --out Case_control_Hipotese_2_final_pruned
+
+ king -b Case_control_Hipotese_2_final_pruned.bed --kinship
+ Case_control_Hipotese_3_final_pruned
+
+ fam <-read.table("./Case_control_Hipotese_2_final_pruned.fam", header=F)
+ phenotype <-read.table("../Pheno_final_hipotese_1.txt", header=T)
+
+ names(fam)[names(fam) == "V2"] <- "IID"
+ fam <- subset(fam, select = c(2))
+ 
+ Pheno_Hip2_final <- join_all(list(phenotype, fam ), by = "IID", type = "inner") #1096
+ write.table(Pheno_Hip2_final, "./Pheno_Hip2_final.txt", sep="\t", col.names = T, row.names = F, quote = F)
+
+ 
+#########################################################################################
+
+# Hipotese 3 
+
+3) Dados de genotipagem das crianças e dos pais:
+- Casos: Crianças com MDD em qualquer uma das waves ou pais com MDD pela MINI
+- Controles: Crianças sem qualquer transtorno mental em qualquer uma das waves ou pais sem qualquer transtorno mental pela MINI
+- Covariáveis: Estado, idade na W2 ou na última que teve o fenótipo coletado (para crianças) e idade na W0 (para os pais)
+
+Pheno_Hip2_final <- read.delim("C:/Users/Adrielle/Downloads/Pheno_Hip2_final.txt")
+Parents_cases_hip_3 <- Parents_pheno[Parents_pheno$MDD == '2', ] # 330
+Parents_controls_hip_3 <- Parents_pheno[Parents_pheno$AnyPsyDisorder  == '1', ] # 2087
+
+Parents_cases_hip_3_filtrado <- subset(Parents_cases_hip_3, select = c(1, 8))
+ names(Parents_cases_hip_3_filtrado)[names(Parents_cases_hip_3_filtrado) == "a"] <- "IID"
+
+Parents_controls_hip_3_filtrado <- subset(Parents_controls_hip_3, select = c(1, 8))
+ names(Parents_controls_hip_3_filtrado)[names(Parents_controls_hip_3_filtrado) == "a"] <- "IID"
+
+Parents_cc_hip_3_filtrado <- as.data.frame(rbind(Parents_cases_hip_3_filtrado,Parents_controls_hip_3_filtrado))
+Pheno_Hip3_final_parents <- join_all(list(Parents_cc_hip_3_filtrado, child_parents_idade_pheno ), by = "IID", type = "inner") #2407
+
+Pheno_Hip2_final <- subset(Pheno_Hip2_final, select = c(1,2,3,5))
+colnames(Pheno_Hip3_final_parents) <- c('IID','MDD','idade_final','W2_site')
+
+Pheno_Hip3_final_parents$MDD <- gsub(1,0,Pheno_Hip3_final_parents$MDD)
+Pheno_Hip3_final_parents$MDD <- gsub(2,1,Pheno_Hip3_final_parents$MDD)
+Case_control_hip_3_final <- as.data.frame(rbind(Pheno_Hip3_final_parents,Pheno_Hip2_final)) #3503 
+table(Case_control_hip_3_final)
+
+  0    1 
+2809  694 
+
+# Keep
+fam_todos <- subset(imputado_sex, select = c(1,2))
+names(fam_todos)[names(fam_todos) == "V2"] <- "IID"
+Pheno_Hip3_final_keep <- join_all(list(fam_todos, Case_control_hip_3_final ), by = "IID", type = "inner") # 3415
+
+table(Pheno_Hip3_final_keep$MDD)
+
+   0    1 
+2731  684 
+
+Pheno_Hip3_final_keep_final <- subset(Pheno_Hip3_final_keep, select = c(2,2))
+names(Pheno_Hip3_final_keep_final)[names(Pheno_Hip3_final_keep_final) == "IID"] <- "FID"
+names(Pheno_Hip3_final_keep_final)[names(Pheno_Hip3_final_keep_final) == "IID.1"] <- "IID"
+write.table(Pheno_Hip3_final_keep_final, "./Pheno_Hip3_final_keep.txt", sep="\t", col.names = T, row.names = F, quote = F)
+write.table(Pheno_Hip3_final_keep, "./Pheno_Hip3_final.txt", sep="\t", col.names = T, row.names = F, quote = F)
+
+
+Pheno_Hip3_final_keep_final_FID <- subset(Pheno_Hip3_final_keep, select = c(1,2,2,2))
+colnames(Pheno_Hip3_final_keep_final_FID) <- c('FID1','IDD','FID','IID')
+Pheno_Hip3_final_keep_final_FID$FID  <- gsub("C","",Pheno_Hip3_final_keep_final_FID$FID)
+colnames(Pheno_Hip3_final_keep_final_FID) <- c('FID1','IDD','FID','IID')
+
+write.table(Pheno_Hip3_final_keep_final_FID, "./Pheno_Hip3_final_FID.txt", sep="\t", col.names = T, row.names = F, quote = F)
+
+##############################################################################################
+
+plink --bfile imputado_QC_Michigan_infoscore --keep Pheno_Hip3_final_FID.txt --make-bed --out Case_control_only_Michigan_infoscore_hipotese_3 #3415
+plink --bfile Case_control_only_Michigan_infoscore_hipotese_3 --update-ids ./Pheno_Hip3_final_FID.txt  --make-bed --out Case_control_only_Michigan_infoscore_hipotese_3_FID
+
+# pruning 
+plink2 --bfile ./Case_control_only_Michigan_infoscore_hipotese_3_FID --indep-pairwise 1000 80 0.1
+plink --bfile Case_control_only_Michigan_infoscore_hipotese_3_FID --exclude plink2.prune.out --make-bed --out Case_control_Hipotese_3_final_pruned
+
+
+###############################################################################################
+
+# Somente os pais 
+
+Pheno_Hip3_final_FID <- read.delim("C:/Users/Adrielle/Downloads/Pheno_Hip3_final_FID.txt")
+Parents_cases_hip_3_NEW <- subset(Pheno_Hip3_final_FID, select = c(1, 2))
+
+# Tirar casos com C  
+df2 <- subset(Parents_cases_hip_3_NEW, substr(Parents_cases_hip_3_NEW[,2], 1, 1) != "C") 
+write.table(df2, "./Only_parents_hip_3", sep="\t", col.names = T, row.names = F, quote = F) # 2319
+
+plink --bfile imputado_QC_Michigan_infoscore --keep Only_parents_hip_3 --make-bed --out only_parents/Case_control_only_Michigan_infoscore_hipotese_3_only_parents 
+
+# Pruning dos arquivos  
+plink2 --bfile ./Case_control_only_Michigan_infoscore_hipotese_3_only_parents --indep-pairwise 1000 80 0.1
+
+# pruning    
+plink --bfile Case_control_only_Michigan_infoscore_hipotese_3_only_parents --exclude plink2.prune.out --make-bed --out Case_control_Hipotese_3_only_parents_final_pruned
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
